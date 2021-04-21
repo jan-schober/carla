@@ -1,0 +1,6 @@
+#!/bin/bash
+#SBATCH --gres=gpu:1
+#SBATCH --mincpus 1
+#SBATCH --partition=long
+source /home/schober/carla/venv/bin/activate
+python /home/schober/carla/create_images.py

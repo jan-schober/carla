@@ -9,18 +9,19 @@ import carla
 # ./CarlaUE4.sh -carla-server -quality-level=Epic
 # srun --gres=gpu:1 /home/rigoll/carla/CarlaUE4.sh -carla-server -quality-level=Epic
 
-num_images = 30000
-inv_framerate = 2  # take image every x seconds
-num_vehicles = 30
-num_walkers = 30
-image_size = 512
+num_images = 10
+inv_framerate = 3  # take image every x seconds
+num_vehicles = 80
+num_walkers = 50
+image_size_h = 512
+image_size_v = 320
 fov = 60
-path_output = pathlib.Path("/home/rigoll/tmp/carla_daten4")
+path_output = pathlib.Path("/home/schober/carla/output")
 
-server_hostname = "ESS-Arvada"
+server_hostname = "ESS-Shaxs"
 server_port = 2000
 fixed_delta_seconds = 0.1
-world_name = "Town01"
+world_name = "Town03"
 
 try:
     client = carla.Client(server_hostname, server_port)
@@ -109,8 +110,8 @@ try:
 
     # rgb camera
     cam_bp = world.get_blueprint_library().find("sensor.camera.rgb")
-    cam_bp.set_attribute("image_size_x", f"{image_size}")
-    cam_bp.set_attribute("image_size_y", f"{image_size}")
+    cam_bp.set_attribute("image_size_x", f"{image_size_h}")
+    cam_bp.set_attribute("image_size_y", f"{image_size_v}")
     cam_bp.set_attribute("fov", f"{fov}")
     cam_location = carla.Location(1.2, 0, 1.75)
     cam_rotation = carla.Rotation(0, 0, 0)
