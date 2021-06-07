@@ -1,7 +1,7 @@
 import pathlib
 import queue
 import random
-
+import carla_vehicle_annotator as cva
 import carla
 
 # Start server
@@ -9,19 +9,30 @@ import carla
 # ./CarlaUE4.sh -carla-server -quality-level=Epic
 # srun --gres=gpu:1 /home/rigoll/carla/CarlaUE4.sh -carla-server -quality-level=Epic
 
-num_images = 10
-inv_framerate = 3  # take image every x seconds
-num_vehicles = 80
-num_walkers = 50
-image_size_h = 512
-image_size_v = 320
+num_images = 5
+inv_framerate = 1  # take image every x seconds
+num_vehicles = 75
+num_walkers = 75
+image_size_h = 1280
+image_size_v = 720
 fov = 60
-path_output = pathlib.Path("/home/schober/carla/output")
+path_output = pathlib.Path("/home/schober/carla/output/bounding_box_test")
 
 server_hostname = "ESS-Shaxs"
 server_port = 2000
 fixed_delta_seconds = 0.1
-world_name = "Town03"
+world_name = "Town01"
+
+
+def retrieve_data(sensor_queue, frame, timeout=1):
+    while True:
+        try:
+            data = sensor_queue.get(True, timeout)
+        except queue.Empty:
+            return None
+        if data.frame == frame:
+            return data
+
 
 try:
     client = carla.Client(server_hostname, server_port)
@@ -113,6 +124,7 @@ try:
     cam_bp.set_attribute("image_size_x", f"{image_size_h}")
     cam_bp.set_attribute("image_size_y", f"{image_size_v}")
     cam_bp.set_attribute("fov", f"{fov}")
+    cam_bp.set_attribute('sensor_tick', '0.1')
     cam_location = carla.Location(1.2, 0, 1.75)
     cam_rotation = carla.Rotation(0, 0, 0)
     cam_transform = carla.Transform(cam_location, cam_rotation)
@@ -120,15 +132,35 @@ try:
                             attachment_type=carla.AttachmentType.Rigid)
 
     # semantic segmentation
+
     semsec_bp = world.get_blueprint_library().find("sensor.camera.semantic_segmentation")
-    semsec_bp.set_attribute("image_size_x", f"{image_size}")
-    semsec_bp.set_attribute("image_size_y", f"{image_size}")
+    semsec_bp.set_attribute("image_size_x", f"{image_size_h}")
+    semsec_bp.set_attribute("image_size_y", f"{image_size_v}")
     semsec_bp.set_attribute("fov", f"{fov}")
+    semsec_bp.set_attribute('sensor_tick', '0.1')
     semsec_location = carla.Location(1.2, 0, 1.75)
     semsec_rotation = carla.Rotation(0, 0, 0)
     semsec_transform = carla.Transform(semsec_location, semsec_rotation)
     semsec = world.spawn_actor(semsec_bp, semsec_transform, attach_to=ego_vehicle,
                                attachment_type=carla.AttachmentType.Rigid)
+
+    # Spawn LIDAR sensor
+    lidar_bp = world.get_blueprint_library().find('sensor.lidar.ray_cast_semantic')
+    lidar_bp.set_attribute('sensor_tick', '0.1')
+    lidar_bp.set_attribute('channels', '64')
+    lidar_bp.set_attribute('points_per_second', '1120000')
+    lidar_bp.set_attribute('upper_fov', '60')
+    lidar_bp.set_attribute('lower_fov', '-60')
+    lidar_bp.set_attribute('range', '100')
+    lidar_bp.set_attribute('rotation_frequency', '20')
+    lidar_bp_location = carla.Location(1.2, 0, 1.75)
+    lidar_bp_rotation = carla.Rotation(0, 0, 0)
+    lidar_transform = carla.Transform(lidar_bp_location, lidar_bp_rotation)
+    lidar = world.spawn_actor(lidar_bp, lidar_transform, attach_to=ego_vehicle)
+
+    tick_queue = queue.Queue()
+    world.on_tick(tick_queue.put)
+    tick_idx, cam_idx, lidar_idx, semsec_idx = 0, 1, 2, 3
 
     # initalize
     for _ in range(50):
@@ -138,23 +170,61 @@ try:
     semsec_queue = queue.Queue()
     cam.listen(cam_queue.put)
     semsec.listen(semsec_queue.put)
+    lidar_queue = queue.Queue()
+    lidar.listen(lidar_queue.put)
+
+    q_list = []
+    q_list.append(tick_queue)
+    q_list.append(cam_queue)
+    q_list.append(lidar_queue)
+    q_list.append(semsec_queue)
 
     frame = 0
     for i in range(num_images * int(inv_framerate / fixed_delta_seconds)):
-        world.tick()
+        nowFrame = world.tick()
 
         while cam_queue.qsize() != 1 or semsec_queue.qsize() != 1:
             pass
 
-        cam_image = cam_queue.get()
-        semsec_image = semsec_queue.get()
+        data = [retrieve_data(q, nowFrame) for q in q_list]
+        assert all(x.frame == nowFrame for x in data if x is not None)
 
+        cam_image = data[cam_idx]
+        semsec_image = data[semsec_idx]
+        lidar_image = data[lidar_idx]
+        snap = data[tick_idx]
+
+        ## start of implementing the 2d bounding box generator
+
+        # Attach additional information to the snapshot
+        vehicles_raw = world.get_actors().filter('vehicle.*')
+        walkers_raw = world.get_actors().filter('walker.pedestrian.*')
+
+
+        #vehicles = cva.snap_processing(vehicles_raw, snap)
+        walkers = cva.snap_processing(vehicles_raw, walkers_raw, snap)
+
+        # Calculating visible bounding boxes
+        filtered_out, _ = cva.auto_annotate_lidar(walkers, cam, lidar_image, show_img=cam_image,
+                                                  json_path='vehicle_class_json_file.txt')
+
+        # Save the results
+        cva.save_output(cam_image, semsec_image, filtered_out['bbox'], filtered_out['class'], save_patched=True,
+                        out_format='json')
+
+        save_darknet = True
+
+        # Save the results to darknet format
+        if save_darknet: cva.save2darknet(filtered_out['bbox'], filtered_out['class'], cam_image)
+
+        '''
         # if cam_image and semsec_image:
         if i % int(inv_framerate / fixed_delta_seconds) == 0:
             cam_image.save_to_disk(str(path_output / f"{frame:07}_cam.png"))
             semsec_image.save_to_disk(str(path_output / f"{frame:07}_semsec.png"),
                                       carla.ColorConverter.CityScapesPalette)
             frame += 1
+        '''
 
 finally:
     client.apply_batch([carla.command.DestroyActor(x) for x in vehicles_id_list])
@@ -165,3 +235,4 @@ finally:
     client.apply_batch([carla.command.DestroyActor(x) for x in walker_controllers_id_list])
     cam.stop()
     semsec.stop()
+    lidar.stop()
