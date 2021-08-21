@@ -9,19 +9,19 @@ import carla
 # ./CarlaUE4.sh -carla-server -quality-level=Epic
 # srun --gres=gpu:1 /home/rigoll/carla/CarlaUE4.sh -carla-server -quality-level=Epic
 
-num_images = 5
-inv_framerate = 1  # take image every x seconds
-num_vehicles = 75
-num_walkers = 75
-image_size_h = 1280
-image_size_v = 720
+num_images = 1000
+inv_framerate = 5  # take image every x seconds
+num_vehicles = 80
+num_walkers = 150
+image_size_h = 512
+image_size_v = 256
 fov = 60
-path_output = pathlib.Path("/home/schober/carla/output/bounding_box_test")
-
+#path_output = pathlib.Path("/home/schober/carla/output/bounding_box_cityscapes")
+output_path = 'output_carla_town_03_2/'
 server_hostname = "ESS-Shaxs"
 server_port = 2000
 fixed_delta_seconds = 0.1
-world_name = "Town01"
+world_name = "Town03"
 
 
 def retrieve_data(sensor_queue, frame, timeout=1):
@@ -151,7 +151,7 @@ try:
     lidar_bp.set_attribute('points_per_second', '1120000')
     lidar_bp.set_attribute('upper_fov', '60')
     lidar_bp.set_attribute('lower_fov', '-60')
-    lidar_bp.set_attribute('range', '100')
+    lidar_bp.set_attribute('range', '150')
     lidar_bp.set_attribute('rotation_frequency', '20')
     lidar_bp_location = carla.Location(1.2, 0, 1.75)
     lidar_bp_rotation = carla.Rotation(0, 0, 0)
@@ -163,7 +163,7 @@ try:
     tick_idx, cam_idx, lidar_idx, semsec_idx = 0, 1, 2, 3
 
     # initalize
-    for _ in range(50):
+    for _ in range(5):
         world.tick()
 
     cam_queue = queue.Queue()
@@ -180,51 +180,53 @@ try:
     q_list.append(semsec_queue)
 
     frame = 0
+    print("World Initalized")
     for i in range(num_images * int(inv_framerate / fixed_delta_seconds)):
-        nowFrame = world.tick()
-
-        while cam_queue.qsize() != 1 or semsec_queue.qsize() != 1:
-            pass
-
-        data = [retrieve_data(q, nowFrame) for q in q_list]
-        assert all(x.frame == nowFrame for x in data if x is not None)
-
-        cam_image = data[cam_idx]
-        semsec_image = data[semsec_idx]
-        lidar_image = data[lidar_idx]
-        snap = data[tick_idx]
-
-        ## start of implementing the 2d bounding box generator
-
-        # Attach additional information to the snapshot
-        vehicles_raw = world.get_actors().filter('vehicle.*')
-        walkers_raw = world.get_actors().filter('walker.pedestrian.*')
-
-
-        #vehicles = cva.snap_processing(vehicles_raw, snap)
-        walkers = cva.snap_processing(vehicles_raw, walkers_raw, snap)
-
-        # Calculating visible bounding boxes
-        filtered_out, _ = cva.auto_annotate_lidar(walkers, cam, lidar_image, show_img=cam_image,
-                                                  json_path='vehicle_class_json_file.txt')
-
-        # Save the results
-        cva.save_output(cam_image, semsec_image, filtered_out['bbox'], filtered_out['class'], save_patched=True,
-                        out_format='json')
-
-        save_darknet = True
-
-        # Save the results to darknet format
-        if save_darknet: cva.save2darknet(filtered_out['bbox'], filtered_out['class'], cam_image)
-
-        '''
-        # if cam_image and semsec_image:
         if i % int(inv_framerate / fixed_delta_seconds) == 0:
-            cam_image.save_to_disk(str(path_output / f"{frame:07}_cam.png"))
-            semsec_image.save_to_disk(str(path_output / f"{frame:07}_semsec.png"),
-                                      carla.ColorConverter.CityScapesPalette)
-            frame += 1
-        '''
+            nowFrame = world.tick()
+
+            while cam_queue.qsize() != 1 or semsec_queue.qsize() != 1:
+                pass
+
+            data = [retrieve_data(q, nowFrame) for q in q_list]
+            assert all(x.frame == nowFrame for x in data if x is not None)
+
+            cam_image = data[cam_idx]
+            semsec_image = data[semsec_idx]
+            lidar_image = data[lidar_idx]
+            snap = data[tick_idx]
+
+            ## start of implementing the 2d bounding box generator
+
+            # Attach additional information to the snapshot
+            vehicles_raw = world.get_actors().filter('vehicle.*')
+            walkers_raw = world.get_actors().filter('walker.pedestrian.*')
+
+            #vehicles = cva.snap_processing(vehicles_raw, snap)
+            walkers = cva.snap_processing(vehicles_raw, walkers_raw, snap)
+
+            # Calculating visible bounding boxes
+            filtered_out, _ = cva.auto_annotate_lidar(walkers, cam, lidar_image, show_img=cam_image,
+                                                      json_path='class_json_file.txt')
+
+            # Save the results
+            cva.save_output(output_path, cam_image, semsec_image, filtered_out['bbox'], filtered_out['class'], save_patched=False,
+                            out_format= 'No')
+
+            save_darknet = True
+
+            # Save the results to darknet format
+            if save_darknet: cva.save2darknet(filtered_out['bbox'], filtered_out['class'], cam_image, output_path)
+
+
+            '''
+            # if cam_image and semsec_image:
+            if i % int(inv_framerate / fixed_delta_seconds) == 0:
+                cam_image.save_to_disk(str(path_output / f"{frame:07}_cam.png"))
+                semsec_image.save_to_disk(str(path_output / f"{frame:07}_semsec.png"),
+                                          carla.ColorConverter.CityScapesPalette)
+                frame += 1
+            '''
 
 finally:
     client.apply_batch([carla.command.DestroyActor(x) for x in vehicles_id_list])

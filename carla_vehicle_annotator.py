@@ -28,7 +28,7 @@ import carla
 #####################################################
 
 ### Use this function to get 2D bounding boxes of visible vehicles to camera using semantic LIDAR
-def auto_annotate_lidar(vehicles, camera, lidar_data, max_dist=150, min_detect=2, show_img=None, json_path=None):
+def auto_annotate_lidar(vehicles, camera, lidar_data, max_dist=175, min_detect=4, show_img=None, json_path=None):
     filtered_data = filter_lidar(lidar_data, camera, max_dist)
     if show_img != None:
         show_lidar(filtered_data, camera, show_img)
@@ -327,9 +327,9 @@ def get_vehicle_class(vehicles, json_path=None):
 #######################################################
 
 ### Use this function to save the rgb image (with and without bounding box) and bounding boxes data
-def save_output(carla_img, sem_img, bboxes, vehicle_class=None, old_bboxes=None, old_vehicle_class=None,
-                cc_rgb=carla.ColorConverter.Raw, path='output_bb/', save_patched=False, add_data=None, out_format='pickle'):
-    carla_img.save_to_disk(path + 'out_rgb/%06d.png' % carla_img.frame, cc_rgb)
+def save_output(path, carla_img, sem_img, bboxes, vehicle_class=None, old_bboxes=None, old_vehicle_class=None,
+                cc_rgb=carla.ColorConverter.Raw , save_patched=False, add_data=None, out_format='pickle'):
+    #carla_img.save_to_disk(path + 'out_rgb/%06d.png' % carla_img.frame, cc_rgb)
     sem_img.save_to_disk(path + 'out_sem/%06d.png' % carla_img.frame, carla.ColorConverter.CityScapesPalette)
 
     out_dict = {}
@@ -350,7 +350,7 @@ def save_output(carla_img, sem_img, bboxes, vehicle_class=None, old_bboxes=None,
             os.makedirs(os.path.dirname(filename))
         with open(filename, 'w') as outfile:
             json.dump(out_dict, outfile, indent=4)
-    else:
+    elif out_format == 'pickle':
         filename = path + 'out_bbox/%06d.pkl' % carla_img.frame
         if not os.path.exists(os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename))
@@ -383,12 +383,12 @@ def save_output(carla_img, sem_img, bboxes, vehicle_class=None, old_bboxes=None,
 
 
 ### Use this function to save bounding box result in darknet training format
-def save2darknet(bboxes, vehicle_class, carla_img, data_path='output_bb/darknet/', cc_rgb=carla.ColorConverter.Raw, save_train=False,
+def save2darknet(bboxes, vehicle_class, carla_img, data_path, cc_rgb=carla.ColorConverter.Raw, save_train=False,
                  customName=''):
     # check whether target path exists
     if customName != '':
         customName = str(customName) + '_'
-    data_path = data_path + 'data/'
+    data_path = data_path + 'darknet/data/'
     if not os.path.exists(os.path.dirname(data_path)):
         os.makedirs(os.path.dirname(data_path))
         print(data_path + ' directory did not exists, new directory created')
@@ -442,22 +442,25 @@ def save2darknet(bboxes, vehicle_class, carla_img, data_path='output_bb/darknet/
 
 ### Use this function to get vehciles' snapshots that can be processed by auto_annotate() function.
 def snap_processing(vehiclesActor, walkersActor, worldSnap):
-    vehicles = []
-    for v, w in zip(vehiclesActor,walkersActor):
+    objects = []
+    for v in vehiclesActor:
         vid = v.id
-        wid = w.id
         vsnap = worldSnap.find(vid)
-        wsnap = worldSnap.find(wid)
-        if vsnap is None and wsnap is None:
+        if vsnap is None:
             continue
-
         vsnap.bounding_box = v.bounding_box
-        wsnap.bounding_box = w.bounding_box
         vsnap.type_id = v.type_id
+        objects.append(vsnap)
+
+    for w in walkersActor:
+        wid = w.id
+        wsnap = worldSnap.find(wid)
+        if wsnap is None:
+            continue
+        wsnap.bounding_box = w.bounding_box
         wsnap.type_id = w.type_id
-        vehicles.append(vsnap)
-        vehicles.append(wsnap)
-    return vehicles
+        objects.append(wsnap)
+    return objects
 
 #######################################################
 #######################################################
