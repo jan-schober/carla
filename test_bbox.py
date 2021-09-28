@@ -1,8 +1,8 @@
 import cv2
 
-img_path = '/home/schober/carla/output_carla_town_03/darknet/data/obj/000180.jpg'
-#bb_path =  '/home/schober/carla/output_carla_town_03/darknet/data/obj/000180.txt'
-bb_path  = '/home/schober/carla/output_carla_town_03/labels_resized/000180.txt'
+img_path = '/home/schober/carla/output_carla_town_01/darknet/data/obj/000014.jpg'
+bb_path =  '/home/schober/carla/output_carla_town_01/darknet/data/obj/000014.txt'
+#bb_path  = '/home/schober/carla/output_carla_town_01/labels_resized/000014.txt'
 img = cv2.imread(img_path)
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
@@ -19,7 +19,7 @@ with open(bb_path, 'r') as f:
         y_top = int(y_center - .5 * h)
         y_bot = int(y_center + .5 * h)
 
-        img = cv2.rectangle(img,(x_left, y_top), (x_right, y_bot), color=(255,0,0), thickness = 2)
+        img = cv2.rectangle(img,(x_left, y_top), (x_right, y_bot), color=(255,0,0), thickness = 1)
 
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-cv2.imwrite('bb_box_resize.png', img)
+cv2.imwrite('bb_box_original.png', img)

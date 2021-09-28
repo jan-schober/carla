@@ -1,27 +1,40 @@
-import pathlib
 import queue
 import random
-import carla_vehicle_annotator as cva
+
 import carla
+
+import carla_vehicle_annotator as cva
 
 # Start server
 # ./CarlaUE4.sh -carla-server
 # ./CarlaUE4.sh -carla-server -quality-level=Epic
 # srun --gres=gpu:1 /home/rigoll/carla/CarlaUE4.sh -carla-server -quality-level=Epic
 
-num_images = 1000
-inv_framerate = 5  # take image every x seconds
-num_vehicles = 80
-num_walkers = 150
-image_size_h = 512
-image_size_v = 256
+'''
+Settings
+'''
+world_name = "Town03"  # loaded town
+num_images = 300  # number of images
+inv_framerate = 5  # take image every x seconds, not sure if this works right now
+num_vehicles = 80  # number of vehicles in town
+num_walkers = 150  # number of pedestrians in town
+image_size_h = 512  # image width of exported images
+image_size_v = 256  # image height of exported images
 fov = 60
-#path_output = pathlib.Path("/home/schober/carla/output/bounding_box_cityscapes")
-output_path = 'output_carla_town_03_2/'
-server_hostname = "ESS-Shaxs"
-server_port = 2000
+output_path = 'output_carla_town_03_2/'  # output folder
+server_hostname = "ESS-Shaxs"  # carla server
+server_port = 2000  # port of calra server
 fixed_delta_seconds = 0.1
-world_name = "Town03"
+
+'''
+Position and rotation of sensors
+'''
+location_cam_x = 1.2
+location_cam_y = 0
+location_cam_z = 1.75
+rot_x = 0
+rot_y = 0
+rot_z = 0
 
 
 def retrieve_data(sensor_queue, frame, timeout=1):
@@ -125,21 +138,20 @@ try:
     cam_bp.set_attribute("image_size_y", f"{image_size_v}")
     cam_bp.set_attribute("fov", f"{fov}")
     cam_bp.set_attribute('sensor_tick', '0.1')
-    cam_location = carla.Location(1.2, 0, 1.75)
-    cam_rotation = carla.Rotation(0, 0, 0)
+    cam_location = carla.Location(location_cam_x, location_cam_y, location_cam_z)
+    cam_rotation = carla.Rotation(rot_x, rot_y, rot_z)
     cam_transform = carla.Transform(cam_location, cam_rotation)
     cam = world.spawn_actor(cam_bp, cam_transform, attach_to=ego_vehicle,
                             attachment_type=carla.AttachmentType.Rigid)
 
     # semantic segmentation
-
     semsec_bp = world.get_blueprint_library().find("sensor.camera.semantic_segmentation")
     semsec_bp.set_attribute("image_size_x", f"{image_size_h}")
     semsec_bp.set_attribute("image_size_y", f"{image_size_v}")
     semsec_bp.set_attribute("fov", f"{fov}")
     semsec_bp.set_attribute('sensor_tick', '0.1')
-    semsec_location = carla.Location(1.2, 0, 1.75)
-    semsec_rotation = carla.Rotation(0, 0, 0)
+    semsec_location = carla.Location(location_cam_x, location_cam_y, location_cam_z)
+    semsec_rotation = carla.Rotation(rot_x, rot_y, rot_z)
     semsec_transform = carla.Transform(semsec_location, semsec_rotation)
     semsec = world.spawn_actor(semsec_bp, semsec_transform, attach_to=ego_vehicle,
                                attachment_type=carla.AttachmentType.Rigid)
@@ -153,8 +165,8 @@ try:
     lidar_bp.set_attribute('lower_fov', '-60')
     lidar_bp.set_attribute('range', '150')
     lidar_bp.set_attribute('rotation_frequency', '20')
-    lidar_bp_location = carla.Location(1.2, 0, 1.75)
-    lidar_bp_rotation = carla.Rotation(0, 0, 0)
+    lidar_bp_location = carla.Location(location_cam_x, location_cam_y, location_cam_z)
+    lidar_bp_rotation = carla.Rotation(rot_x, rot_y, rot_z)
     lidar_transform = carla.Transform(lidar_bp_location, lidar_bp_rotation)
     lidar = world.spawn_actor(lidar_bp, lidar_transform, attach_to=ego_vehicle)
 
@@ -201,8 +213,6 @@ try:
             # Attach additional information to the snapshot
             vehicles_raw = world.get_actors().filter('vehicle.*')
             walkers_raw = world.get_actors().filter('walker.pedestrian.*')
-
-            #vehicles = cva.snap_processing(vehicles_raw, snap)
             walkers = cva.snap_processing(vehicles_raw, walkers_raw, snap)
 
             # Calculating visible bounding boxes
@@ -212,22 +222,13 @@ try:
             # Save the results
             cva.save_output(output_path, cam_image, semsec_image, filtered_out['bbox'], filtered_out['class'], save_patched=False,
                             out_format= 'No')
-
+            # save the bounding boxes in darknet format, i used this for my master thesis!!!
             save_darknet = True
 
             # Save the results to darknet format
             if save_darknet: cva.save2darknet(filtered_out['bbox'], filtered_out['class'], cam_image, output_path)
 
-
-            '''
-            # if cam_image and semsec_image:
-            if i % int(inv_framerate / fixed_delta_seconds) == 0:
-                cam_image.save_to_disk(str(path_output / f"{frame:07}_cam.png"))
-                semsec_image.save_to_disk(str(path_output / f"{frame:07}_semsec.png"),
-                                          carla.ColorConverter.CityScapesPalette)
-                frame += 1
-            '''
-
+#  close the world and stop the sesnros
 finally:
     client.apply_batch([carla.command.DestroyActor(x) for x in vehicles_id_list])
 
